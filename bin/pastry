@@ -18,9 +18,14 @@ parser  = OptionParser.new do |opts|
   opts.on('-P', '--pidfile file',     'pidfile')          {|value| options[:pidfile]    = value }
   opts.on('-c', '--connections num',  'max connections')  {|value| options[:maxconn]    = value }
   opts.on('-t', '--timeout secs',     'read timeout')     {|value| options[:timeout]    = value }
+  opts.on('-A', '--application name', 'app name')         {|value| options[:name]       = value }
 end
 
 parser.parse!
+
+%w(workers port maxconn timeout).map(&:to_sym).each do |name|
+  options[name] = options[name].to_i if options.key?(name)
+end
 
 app  = Rack::Builder.parse_file(options.delete(:rackup) || 'config.ru').first
 size = options.delete(:workers) || 2
