@@ -1,0 +1,26 @@
+= Thin Pastry flakes
+
+This gem is just scratching an itch, that I could not run a master and fork several thin workers
+listening on the same parent socket. 
+
+Why fork thin ? So I can make use of the multiple cores more effectively.
+
+== Warning
+
+It's fairly pre-alpha, so use at your own peril
+
+== Usage
+
+    pastry -R myapp.ru -n 2 -P /tmp/myapp.pid -l /tmp/myapp.log -a 127.0.0.1 -p 3000 -d
+
+    kill -TERM `cat /tmp/myapp.pid`
+
+
+== TODO
+
+ * graceful stop / restart
+ * increase or decrease worker count
+
+== License
+
+{Creative Commons Attribution - CC BY}[http://creativecommons.org/licenses/by/3.0]
