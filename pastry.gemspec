@@ -1,6 +1,6 @@
 Gem::Specification.new do |s|
   s.name              = "pastry"
-  s.version           = "0.1.0"
+  s.version           = "0.1.1"
   s.date              = "2011-11-26"
   s.authors           = "Bharanee Rathna"
   s.email             = "deepfryed@gmail.com"
@@ -12,6 +12,6 @@ Gem::Specification.new do |s|
   s.executables       = %w(pastry)
   s.require_paths     = %w(lib)
 
-  # TODO get the em fixes in http://github.com/deepfryed/eventmachine accepted
+  # TODO get the changes in http://github.com/deepfryed/eventmachine merged upstream.
   s.add_dependency 'thin'
 end

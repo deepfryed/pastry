@@ -16,6 +16,8 @@ parser  = OptionParser.new do |opts|
   opts.on('-d', '--[no-]daemon',      'daemonize')        {|value| options[:daemonize]  = value }
   opts.on('-l', '--logfile file',     'logfile')          {|value| options[:logfile]    = value }
   opts.on('-P', '--pidfile file',     'pidfile')          {|value| options[:pidfile]    = value }
+  opts.on('-c', '--connections num',  'max connections')  {|value| options[:maxconn]    = value }
+  opts.on('-t', '--timeout secs',     'read timeout')     {|value| options[:timeout]    = value }
 end
 
 parser.parse!
