@@ -15,11 +15,14 @@ It's fairly pre-alpha, so use at your own peril
 
     kill -TERM `cat /tmp/myapp.pid`
 
+== Dependencies
+
+* requires patched eventmachine in http://github.com/deepfryed/eventmachine
 
 == TODO
 
- * graceful stop / restart
- * increase or decrease worker count
+* graceful stop / restart
+* increase or decrease worker count
 
 == License
 
