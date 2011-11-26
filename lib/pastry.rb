@@ -4,7 +4,7 @@ require 'socket'
 require 'thin'
 
 class Pastry
-  attr_reader :pool, :unix, :host, :port, :pidfile, :logfile, :daemon, :pids
+  attr_reader :pool, :unix, :host, :port, :pidfile, :logfile, :daemon
 
   def initialize pool, app, options = {}
     @pool    = pool
@@ -58,45 +58,39 @@ class Pastry
     options    = {timeout: @timeout, maximum_connections: @maxconn}
 
     logger.info motd
+
+    @running   = true
+    pids       = pool.times.map {|n| run(server, options, n) }
+
     Signal.trap('CHLD') do
-      unless @running
+      if @running
         died  = pids.reject {|pid| Process.kill(0, pid) rescue nil}
-        pids -= died
         died.each do |pid|
           logger.info "process #{pid} died, starting a new one"
-          pids << run(server, options)
+          idx       = pids.index(pid)
+          pids[idx] = run(server, options, idx)
         end
       end
     end
 
     %w(INT TERM HUP).each do |signal|
       Signal.trap(signal) do
+        @running = false
         logger.info "caught #{signal}, closing time for the bakery -- no more pastries!"
-        stop
+        pids.each {|pid| Process.kill(signal, pid) rescue nil}
+        exit
       end
     end
 
-    at_exit { cleanup }
-
-    @running = true
-    @pids    = pool.times.map { run(server, options) }
-
+    at_exit { FileUtils.rm_f(pidfile) }
     Process.waitall rescue nil
   end
 
-  def stop
-    @running = false
-    cleanup
-    exit
-  end
-
-  def cleanup signal = 'TERM'
-    FileUtils.rm_f(pidfile)
-    pids.each {|pid| Process.kill(signal, pid) rescue nil}
-  end
-
-  def run server, options
-    fork { EM.run { Backend.new(options).start(server) }}
+  def run server, options, worker
+    fork do
+      $0 = "|___ pastry chef #{worker} (started: #{Time.now})"
+      EM.run { Backend.new(options).start(server) }
+    end
   end
 
   module PastryServer
