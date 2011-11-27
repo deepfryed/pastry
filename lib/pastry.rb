@@ -4,29 +4,47 @@ require 'socket'
 require 'thin'
 
 class Pastry
-  attr_reader :pool, :unix, :host, :port, :pidfile, :logfile, :daemon
+  attr_accessor :pool, :host, :port, :queue, :max_connections, :timeout, :daemonize, :pidfile, :name, :socket, :logfile
 
   def initialize pool, app, options = {}
-    @pool    = pool
-    @app     = app
-    @host    = options.fetch :host,       '127.0.0.1'
-    @unix    = options.fetch :socket,     nil
-    @logfile = options.fetch :logfile,    nil
-    @daemon  = options.fetch :daemonize,  false
-    @pidfile = options.fetch :pidfile,    '/tmp/pastry.pid'
-    @name    = options.fetch :name,       nil
+    @pool             = pool
+    @app              = app
+    @host             = options.fetch :host,            '127.0.0.1'
+    @port             = options.fetch :port,            3000
+    @queue            = options.fetch :queue,           1024
+    @max_connections  = options.fetch :max_connections, 1024
+    @timeout          = options.fetch :timeout,           30
+    @daemonize        = options.fetch :daemonize,       false
+    @pidfile          = options.fetch :pidfile,         '/tmp/pastry.pid'
+    @name             = options.fetch :name,            nil
+    @socket           = options.fetch :socket,          nil
+    @logfile          = options.fetch :logfile,         nil
 
-    @port    = options.fetch(:port,    3000).to_i
-    @queue   = options.fetch(:queue,   1024).to_i
-    @maxconn = options.fetch(:maxconn, 1024).to_i
-    @timeout = options.fetch(:timeout,   30).to_i
+    @before_fork      = nil
+    @after_fork       = nil
+  end
+
+  def before_fork &block
+    raise ArgumentError, 'missing callback' unless block
+    @before_fork = block
+  end
+
+  def after_fork &block
+    raise ArgumentError, 'missing callback' unless block
+    @after_fork = block
+  end
+
+  def parse_config file
+    instance_eval File.read(file)
   end
 
   def start
+    do_sanity_checks
     ensure_not_running!
-    Process.daemon if daemon
 
-    if daemon || logfile
+    Process.daemon if daemonize
+
+    if daemonize || logfile
       STDOUT.reopen(logfile || '/tmp/pastry.log', 'a')
       STDERR.reopen(logfile || '/tmp/pastry.log', 'a')
       STDOUT.sync = true
@@ -34,6 +52,12 @@ class Pastry
     end
 
     start!
+  end
+
+  private
+
+  def do_sanity_checks
+    %w(port queue max_connections timeout).each {|var| send("#{var}=", send(var).to_i)}
   end
 
   def ensure_not_running!
@@ -48,30 +72,36 @@ class Pastry
     File.open(pidfile, 'w') {|fh| fh.write(Process.pid)}
   end
 
-  def name
-    '%s master' % (@name || 'pastry')
+  def master_name
+    '%s master' % (name || 'pastry')
   end
 
   def motd
-    "starting #{name} with #{pool} minions listening on #{unix ? 'socket %s ' % unix : 'port %d' % port}"
+    "starting #{master_name} with #{pool} minions listening on #{socket ? 'socket %s ' % socket : 'port %d' % port}"
   end
 
   def start!
     create_pidfile
-    server = unix ? UNIXServer.new(unix) : TCPServer.new(host, port)
+    server = socket ? UNIXServer.new(socket) : TCPServer.new(host, port)
 
-    server.setsockopt(Socket::SOL_SOCKET, Socket::SO_REUSEADDR, true) unless unix
+    server.setsockopt(Socket::SOL_SOCKET, Socket::SO_REUSEADDR, true) unless socket
     server.fcntl(Fcntl::F_SETFL, server.fcntl(Fcntl::F_GETFL) | Fcntl::O_NONBLOCK)
 
-    server.listen(@queue)
+    server.listen(queue)
     server.extend(PastryServer)
 
     server.app = @app
-    logger     = Logger.new(logfile || (daemon ? '/tmp/pastry.log' : $stdout), 0)
+    logger     = Logger.new(logfile || (daemonize ? '/tmp/pastry.log' : $stdout), 0)
 
     logger.info motd
 
-    $0         = name if @name
+    # make this world readable.
+    FileUtils.chmod(0777, socket) if socket
+
+    # pre-fork cleanups, let user cleanup any leaking fds.
+    @before_fork && @before_fork.call
+
+    $0         = name if name
     @running   = true
     pids       = pool.times.map {|idx| run(server, idx) }
 
@@ -95,15 +125,16 @@ class Pastry
       end
     end
 
-    at_exit { FileUtils.rm_f(pidfile); FileUtils.rm_f(unix.to_s) }
+    at_exit { FileUtils.rm_f(pidfile); FileUtils.rm_f(socket.to_s) }
     Process.waitall rescue nil
   end
 
   def run server, worker
     fork do
-      $0 = "#{@name ? "%s worker" % @name : "pastry chef"} #{worker} (started: #{Time.now})"
+      @after_fork && @after_fork.call(worker, Process.pid)
+      $0 = "#{name ? "%s worker" % name : "pastry chef"} #{worker} (started: #{Time.now})"
       EM.epoll
-      EM.set_descriptor_table_size(@maxconn)
+      EM.set_descriptor_table_size(max_connections)
       EM.run { Backend.new.start(server) }
     end
   end
