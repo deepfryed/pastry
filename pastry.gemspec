@@ -1,6 +1,6 @@
 Gem::Specification.new do |s|
   s.name              = "pastry"
-  s.version           = "0.1.2"
+  s.version           = "0.1.3"
   s.date              = "2011-11-27"
   s.authors           = "Bharanee Rathna"
   s.email             = "deepfryed@gmail.com"

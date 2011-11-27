@@ -58,7 +58,7 @@ class Pastry
 
   def start!
     create_pidfile
-    server = unix ? UnixServer.new(unix) : TCPServer.new(host, port)
+    server = unix ? UNIXServer.new(unix) : TCPServer.new(host, port)
 
     server.setsockopt(Socket::SOL_SOCKET, Socket::SO_REUSEADDR, true) unless unix
     server.fcntl(Fcntl::F_SETFL, server.fcntl(Fcntl::F_GETFL) | Fcntl::O_NONBLOCK)
