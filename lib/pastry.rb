@@ -68,13 +68,12 @@ class Pastry
 
     server.app = @app
     logger     = Logger.new(logfile || (daemon ? '/tmp/pastry.log' : $stdout), 0)
-    options    = {timeout: @timeout, maximum_connections: @maxconn}
 
     logger.info motd
 
     $0         = name if @name
     @running   = true
-    pids       = pool.times.map {|n| run(server, options, n) }
+    pids       = pool.times.map {|idx| run(server, idx) }
 
     Signal.trap('CHLD') do
       if @running
@@ -82,7 +81,7 @@ class Pastry
         died.each do |pid|
           logger.info "process #{pid} died, starting a new one"
           idx       = pids.index(pid)
-          pids[idx] = run(server, options, idx)
+          pids[idx] = run(server, idx)
         end
       end
     end
@@ -92,7 +91,7 @@ class Pastry
         @running = false
         logger.info "caught #{signal}, closing time for the bakery -- no more pastries!"
         pids.each {|pid| Process.kill(signal, pid) rescue nil}
-        exit
+        Kernel.exit
       end
     end
 
@@ -100,10 +99,12 @@ class Pastry
     Process.waitall rescue nil
   end
 
-  def run server, options, worker
+  def run server, worker
     fork do
       $0 = "#{@name ? "%s worker" % @name : "pastry chef"} #{worker} (started: #{Time.now})"
-      EM.run { Backend.new(options).start(server) }
+      EM.epoll
+      EM.set_descriptor_table_size(@maxconn)
+      EM.run { Backend.new.start(server) }
     end
   end
 
@@ -112,24 +113,24 @@ class Pastry
   end
 
   class Backend < Thin::Backends::Base
-    def initialize options = {}
-      super()
-      options.each {|key, value| send("#{key}=", value)}
-    end
-
     def start server
       @stopping = false
       @running  = true
       @server   = server
 
-      config
       trap_signals!
-
       EM.attach_server_socket(server, Thin::Connection, &method(:initialize_connection))
     end
 
     def trap_signals!
-      %w(INT TERM HUP CHLD).each {|signal| Signal.trap(signal) { exit }}
+      %w(INT TERM HUP CHLD).each do |signal|
+        Signal.trap(signal) do
+          @stopping = true
+          @running  = false
+          EM.stop
+          Kernel.exit!
+        end
+      end
     end
   end # Backend
 end # Pastry
