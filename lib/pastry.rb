@@ -85,6 +85,7 @@ class Pastry
     server = socket ? UNIXServer.new(socket) : TCPServer.new(host, port)
 
     server.setsockopt(Socket::SOL_SOCKET, Socket::SO_REUSEADDR, true) unless socket
+    server.fcntl(Fcntl::F_SETFD, server.fcntl(Fcntl::F_GETFD) | Fcntl::FD_CLOEXEC)
     server.fcntl(Fcntl::F_SETFL, server.fcntl(Fcntl::F_GETFL) | Fcntl::O_NONBLOCK)
 
     server.listen(queue)
