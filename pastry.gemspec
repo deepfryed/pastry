@@ -1,7 +1,7 @@
 Gem::Specification.new do |s|
   s.name              = "pastry"
-  s.version           = "0.1.4"
-  s.date              = "2011-11-28"
+  s.version           = "0.1.5"
+  s.date              = "2011-12-02"
   s.authors           = "Bharanee Rathna"
   s.email             = "deepfryed@gmail.com"
   s.summary           = "thin runner that supports forking"
