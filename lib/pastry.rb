@@ -2,6 +2,7 @@ require 'fileutils'
 require 'logger'
 require 'socket'
 require 'thin'
+require 'thin/server'
 
 class Pastry
   attr_accessor :pool, :host, :port, :queue, :max_connections, :timeout, :daemonize, :pidfile, :name, :socket, :logfile
@@ -102,13 +103,13 @@ class Pastry
     # pre-fork cleanups, let user cleanup any leaking fds.
     @before_fork && @before_fork.call
 
-    $0         = name if name
+    $0         = "#{name} master (started: #{Time.now})" if name
     @running   = true
     pids       = pool.times.map {|idx| run(server, idx) }
 
     Signal.trap('CHLD') do
       if @running
-        died  = pids.reject {|pid| Process.kill(0, pid) rescue nil}
+        died = pids.select {|pid| Process.waitpid(pid, Process::WNOHANG) rescue 0}
         died.each do |pid|
           logger.info "process #{pid} died, starting a new one"
           idx       = pids.index(pid)
