@@ -7,18 +7,18 @@ options = {}
 parser  = OptionParser.new do |opts|
   opts.banner = "pastry [options]"
 
-  opts.on('-n', '--servers number',   'worker count')     {|value| options[:workers]    = value }
-  opts.on('-E', '--environment name', 'rack environment') {|value| options[:env]        = value }
-  opts.on('-R', '--rackup file',      'rackup file')      {|value| options[:rackup]     = value }
-  opts.on('-a', '--address name',     'bind ip/host')     {|value| options[:host]       = value }
-  opts.on('-p', '--port name',        'bind port')        {|value| options[:port]       = value }
-  opts.on('-s', '--socket file',      'unix socket')      {|value| options[:socket]     = value }
-  opts.on('-d', '--[no-]daemon',      'daemonize')        {|value| options[:daemonize]  = value }
-  opts.on('-l', '--logfile file',     'logfile')          {|value| options[:logfile]    = value }
-  opts.on('-P', '--pidfile file',     'pidfile')          {|value| options[:pidfile]    = value }
-  opts.on('-c', '--connections num',  'max connections')  {|value| options[:maxconn]    = value }
-  opts.on('-t', '--timeout secs',     'read timeout')     {|value| options[:timeout]    = value }
-  opts.on('-A', '--application name', 'app name')         {|value| options[:name]       = value }
+  opts.on('-n', '--servers number',   'worker count')     {|value| options[:workers]          = value }
+  opts.on('-E', '--environment name', 'rack environment') {|value| options[:env]              = value }
+  opts.on('-R', '--rackup file',      'rackup file')      {|value| options[:rackup]           = value }
+  opts.on('-a', '--address name',     'bind ip/host')     {|value| options[:host]             = value }
+  opts.on('-p', '--port name',        'bind port')        {|value| options[:port]             = value }
+  opts.on('-s', '--socket file',      'unix socket')      {|value| options[:socket]           = value }
+  opts.on('-d', '--[no-]daemon',      'daemonize')        {|value| options[:daemonize]        = value }
+  opts.on('-l', '--logfile file',     'logfile')          {|value| options[:logfile]          = value }
+  opts.on('-P', '--pidfile file',     'pidfile')          {|value| options[:pidfile]          = value }
+  opts.on('-c', '--connections num',  'max connections')  {|value| options[:max_connections]  = value }
+  opts.on('-t', '--timeout secs',     'read timeout')     {|value| options[:timeout]          = value }
+  opts.on('-A', '--application name', 'app name')         {|value| options[:name]             = value }
 end
 
 parser.parse!
