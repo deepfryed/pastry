@@ -70,7 +70,7 @@ class Pastry
     if File.exists?(pidfile) && pid = File.read(pidfile).to_i
       running = Process.kill(0, pid) rescue nil
       raise "already running with pid #{pid}" if running
-      FileUtils.rm_f(pidfile)
+      FileUtils.rm_f([pidfile, socket.to_s])
     end
   end
 
