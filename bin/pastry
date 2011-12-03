@@ -3,7 +3,12 @@
 require 'pastry'
 require 'optparse'
 
-options = {}
+# TODO unices only.
+def start_command
+  %x{ps -o command= -p #{Process.pid}}.strip
+end
+
+options = {start_command: start_command}
 parser  = OptionParser.new do |opts|
   opts.banner = "pastry [options]"
 

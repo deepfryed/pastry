@@ -5,7 +5,11 @@ require 'thin'
 require 'thin/server'
 
 class Pastry
-  attr_accessor :pool, :host, :port, :queue, :max_connections, :timeout, :daemonize, :pidfile, :name, :socket, :logfile
+  # have defaults
+  attr_accessor :pool, :host, :port, :queue, :max_connections, :timeout, :daemonize, :pidfile
+
+  # no defaults
+  attr_accessor :name, :socket, :logfile, :start_command
 
   def initialize pool, app, options = {}
     @pool             = pool
@@ -20,6 +24,7 @@ class Pastry
     @name             = options.fetch :name,            nil
     @socket           = options.fetch :socket,          nil
     @logfile          = options.fetch :logfile,         nil
+    @start_command    = options.fetch :start_command,   nil
 
     @before_fork      = nil
     @after_fork       = nil
@@ -81,6 +86,10 @@ class Pastry
     "starting #{master_name} with #{pool} minions listening on #{socket ? 'socket %s ' % socket : 'port %d' % port}"
   end
 
+  def logger
+    @logger ||= Logger.new(logfile || (daemonize ? '/tmp/pastry.log' : $stdout), 0)
+  end
+
   def start!
     create_pidfile
     server = socket ? UNIXServer.new(socket) : TCPServer.new(host, port)
@@ -94,8 +103,6 @@ class Pastry
     server.extend(PastryServer)
 
     server.app = @app
-    logger     = Logger.new(logfile || (daemonize ? '/tmp/pastry.log' : $stdout), 0)
-
     logger.info motd
 
     # make this world readable.
@@ -119,17 +126,56 @@ class Pastry
       end
     end
 
-    %w(INT TERM HUP).each do |signal|
+    signals =  %w(INT TERM QUIT)
+    signals << %q(HUP) unless start_command
+
+    signals.each do |signal|
       Signal.trap(signal) do
         @running = false
         logger.info "caught #{signal}, closing time for the bakery -- no more pastries!"
-        pids.each {|pid| Process.kill(signal, pid) rescue nil}
-        Kernel.exit
+        stop_workers(signal, pids)
+        FileUtils.rm_f([pidfile, socket.to_s])
+        Kernel.exit!
       end
     end
 
-    at_exit { FileUtils.rm_f(pidfile); FileUtils.rm_f(socket.to_s) }
+    if start_command
+      Signal.trap('HUP') do
+        @running = false
+        logger.info "caught SIGHUP, restarting gracefully"
+
+        # finish exiting requests
+        stop_workers('HUP', pids)
+
+        server.close
+        FileUtils.rm_f([pidfile, socket.to_s])
+        Kernel.exec start_command
+      end
+    end
+
     Process.waitall rescue nil
+  end
+
+  def stop_workers signal, pids
+    logger.info "stopping workers"
+    pids.each {|pid| Process.kill(signal, pid) rescue nil}
+    return if signal == 'KILL'
+
+    logger.info "waiting up to #{timeout} seconds"
+    begin
+      Timeout.timeout(timeout) do
+        alive = pids
+        until alive.empty?
+          sleep 0.1
+          alive = pids.reject {|pid| Process.waitpid(pid, Process::WNOHANG) rescue 0}
+        end
+      end
+    rescue Timeout::Error => e
+      logger.info "killing stray pastry chefs with butcher knife (SIGKILL)"
+      pids.each {|pid| Process.kill('KILL', pid) rescue nil}
+    end
+
+    logger.info "all stop - ok"
   end
 
   def run server, worker
@@ -153,18 +199,22 @@ class Pastry
       @server   = server
 
       trap_signals!
-      EM.attach_server_socket(server, Thin::Connection, &method(:initialize_connection))
+      @signature = EM.attach_server_socket(server, Thin::Connection, &method(:initialize_connection))
     end
 
     def trap_signals!
-      %w(INT TERM HUP CHLD).each do |signal|
-        Signal.trap(signal) do
-          @stopping = true
-          @running  = false
-          EM.stop
-          Kernel.exit!
-        end
-      end
+      # ignore SIGCHLD, can be overriden by app.
+      Signal.trap('CHLD', 'IGNORE')
+
+      # close connections and stop gracefully
+      Signal.trap('HUP') { stop; Kernel.exit! }
+
+      # die die, too bad
+      %w(INT QUIT TERM).each {|signal| Signal.trap(signal) { stop!; Kernel.exit! }}
+    end
+
+    def disconnect
+      EM.stop_server(@signature)
     end
   end # Backend
 end # Pastry
