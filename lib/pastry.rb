@@ -55,6 +55,8 @@ class Pastry
       STDERR.reopen(logfile || '/tmp/pastry.log', 'a')
       STDOUT.sync = true
       STDERR.sync = true
+      STDOUT.binmode
+      STDERR.binmode
     end
 
     start!
