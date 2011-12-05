@@ -164,10 +164,12 @@ class Pastry
     pair[1].sendmsg "*", 0, nil, data
     pair.each(&:close)
 
-    # TODO signal parent that all is good and the new master is good to roll on its down ?
+    # TODO signal parent that all is good and the new master is good to roll on its own ?
     #      1. the new master failed to start
     #      2. something in the after_fork bit crapped out
     #      3. something else in the new code barfs during request
+    #
+    # A way to do this is provide pastry with a test route to hit after spawning the new master.
     Process.detach(pid)
 
     # finish exiting requests
