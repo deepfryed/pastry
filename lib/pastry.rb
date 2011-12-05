@@ -64,6 +64,8 @@ class Pastry
 
   private
 
+  attr_accessor :pids
+
   def do_sanity_checks
     %w(port queue max_connections timeout).each {|var| send("#{var}=", send(var).to_i)}
   end
@@ -116,7 +118,7 @@ class Pastry
 
     $0         = "#{name} master (started: #{Time.now})" if name
     @running   = true
-    pids       = pool.times.map {|idx| run(server, idx) }
+    @pids      = pool.times.map {|idx| run(server, idx) }
 
     Signal.trap('CHLD') do
       if @running
@@ -136,17 +138,17 @@ class Pastry
       Signal.trap(signal) do
         @running = false
         logger.info "caught #{signal}, closing time for the bakery -- no more pastries!"
-        stop_workers(signal, pids)
+        stop_workers(signal)
         FileUtils.rm_f([pidfile, socket.to_s])
         Kernel.exit!
       end
     end
 
-    Signal.trap('HUP') { graceful_restart(server, pids) } if start_command
+    Signal.trap('HUP') { graceful_restart(server) } if start_command
     Process.waitall rescue nil
   end
 
-  def graceful_restart server, pids
+  def graceful_restart server
     @running = false
     logger.info "caught SIGHUP, restarting gracefully"
 
@@ -172,14 +174,23 @@ class Pastry
     # A way to do this is provide pastry with a test route to hit after spawning the new master.
     Process.detach(pid)
 
-    # finish exiting requests
-    stop_workers('HUP', pids)
-    server.close
-    FileUtils.rm_f "#{pidfile}.old"
-    Kernel.exit
+    begin
+      Timeout.timeout(timeout) { sleep 0.5 until File.exists?(pidfile) }
+    rescue Timeout::Error => e
+      Process.kill('TERM', pid) rescue nil
+      logger.error "new master failed to spawn within #{timeout} secs, check logs"
+      @running = true
+      FileUtils.mv "#{pidfile}.old", pidfile
+    else
+      # finish exiting requests
+      stop_workers('HUP')
+      server.close
+      FileUtils.rm_f "#{pidfile}.old"
+      Kernel.exit
+    end
   end
 
-  def stop_workers signal, pids
+  def stop_workers signal
     logger.info "stopping workers"
     pids.each {|pid| Process.kill(signal, pid) rescue nil}
     return if signal == 'KILL'
@@ -203,7 +214,7 @@ class Pastry
 
   def run server, worker
     fork do
-      @after_fork && @after_fork.call(worker, Process.pid)
+      @after_fork && @after_fork.call(Process.pid, worker)
       $0 = "#{name ? "%s worker" % name : "pastry chef"} #{worker} (started: #{Time.now})"
       EM.epoll
       EM.set_descriptor_table_size(max_connections)
