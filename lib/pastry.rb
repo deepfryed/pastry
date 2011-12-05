@@ -94,7 +94,8 @@ class Pastry
 
   def start!
     create_pidfile
-    server = socket ? UNIXServer.new(socket) : TCPServer.new(host, port)
+    server   = ENV['PASTRY_FD'] && Socket.for_fd(ENV['PASTRY_FD'].to_i)
+    server ||= socket ? UNIXServer.new(socket) : TCPServer.new(host, port)
 
     server.setsockopt(Socket::SOL_SOCKET, Socket::SO_REUSEADDR, true) unless socket
     server.fcntl(Fcntl::F_SETFD, server.fcntl(Fcntl::F_GETFD) | Fcntl::FD_CLOEXEC)
@@ -141,21 +142,39 @@ class Pastry
       end
     end
 
-    if start_command
-      Signal.trap('HUP') do
-        @running = false
-        logger.info "caught SIGHUP, restarting gracefully"
+    Signal.trap('HUP') { graceful_restart(server, pids) } if start_command
+    Process.waitall rescue nil
+  end
 
-        # finish exiting requests
-        stop_workers('HUP', pids)
+  def graceful_restart server, pids
+    @running = false
+    logger.info "caught SIGHUP, restarting gracefully"
 
-        server.close
-        FileUtils.rm_f([pidfile, socket.to_s])
-        Kernel.exec start_command
-      end
+    FileUtils.mv pidfile, "#{pidfile}.old"
+
+    pair = UNIXSocket.pair
+    data = Socket::AncillaryData.unix_rights(server)
+    pid  = fork do
+      mesg, addr, rflags, *controls = pair[0].recvmsg(scm_rights: true)
+      ENV['PASTRY_FD'] = controls.first.unix_rights[0].fileno.to_s
+      pair.each(&:close)
+      Kernel.exec(start_command)
     end
 
-    Process.waitall rescue nil
+    pair[1].sendmsg "*", 0, nil, data
+    pair.each(&:close)
+
+    # TODO signal parent that all is good and the new master is good to roll on its down ?
+    #      1. the new master failed to start
+    #      2. something in the after_fork bit crapped out
+    #      3. something else in the new code barfs during request
+    Process.detach(pid)
+
+    # finish exiting requests
+    stop_workers('HUP', pids)
+    server.close
+    FileUtils.rm_f "#{pidfile}.old"
+    Kernel.exit
   end
 
   def stop_workers signal, pids
@@ -209,7 +228,10 @@ class Pastry
       Signal.trap('CHLD', 'IGNORE')
 
       # close connections and stop gracefully
-      Signal.trap('HUP') { stop; Kernel.exit! }
+      Signal.trap('HUP') do
+        stop
+        EM.add_periodic_timer(1) { Kernel.exit! if @connections.empty? }
+      end
 
       # die die, too bad
       %w(INT QUIT TERM).each {|signal| Signal.trap(signal) { stop!; Kernel.exit! }}
