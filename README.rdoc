@@ -21,7 +21,6 @@ It's fairly pre-alpha, so use at your own peril
 
 == TODO
 
-* graceful stop / restart
 * increase or decrease worker count
 
 == License
