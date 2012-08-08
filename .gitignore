@@ -2,3 +2,4 @@ gems/
 bin/*
 !bin/pastry
 *.gem
+.bundle/

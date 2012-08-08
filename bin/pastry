@@ -33,11 +33,12 @@ parser.parse!
   options[name] = options[name].to_i if options.key?(name)
 end
 
+# setup environment before loading any app library
+ENV['RACK_ENV'] = options.delete(:env) || 'development'
+
 app    = Rack::Builder.parse_file(options.delete(:rackup) || 'config.ru').first
 size   = options.delete(:workers) || 2
-env    = options.delete(:env)     || 'development'
 master = Pastry.new(size, app, options)
 
-ENV['RACK_ENV'] = env
 master.parse_config(ARGV.shift) if ARGV.first && File.exists?(ARGV.first)
 master.start
