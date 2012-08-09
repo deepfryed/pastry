@@ -9,7 +9,7 @@ class Pastry
   attr_accessor :pool, :host, :port, :queue, :max_connections, :timeout, :daemonize, :pidfile
 
   # no defaults
-  attr_accessor :name, :socket, :logfile, :start_command
+  attr_accessor :name, :socket, :logfile, :start_command, :cwd
 
   def initialize pool, app, options = {}
     @pool             = pool
@@ -25,6 +25,7 @@ class Pastry
     @socket           = options.fetch :socket,          nil
     @logfile          = options.fetch :logfile,         nil
     @start_command    = options.fetch :start_command,   nil
+    @cwd              = File.expand_path(ENV['PWD'] || Dir.pwd)
 
     @before_fork      = nil
     @after_fork       = nil
@@ -48,7 +49,7 @@ class Pastry
     do_sanity_checks
     ensure_not_running!
 
-    Process.daemon if daemonize
+    Process.daemon(true, true) if daemonize
 
     if daemonize || logfile
       STDOUT.reopen(logfile || '/tmp/pastry.log', 'a')
@@ -160,7 +161,9 @@ class Pastry
       mesg, addr, rflags, *controls = pair[0].recvmsg(scm_rights: true)
       ENV['PASTRY_FD'] = controls.first.unix_rights[0].fileno.to_s
       pair.each(&:close)
-      Kernel.exec(start_command)
+      Dir.chdir(cwd) do
+        Kernel.exec(start_command)
+      end
     end
 
     pair[1].sendmsg "*", 0, nil, data
@@ -241,13 +244,20 @@ class Pastry
       Signal.trap('CHLD', 'IGNORE')
 
       # close connections and stop gracefully
-      Signal.trap('HUP') do
-        stop
-        EM.add_periodic_timer(1) { Kernel.exit! if @connections.empty? }
+      %w(HUP QUIT).each do |signal|
+        Signal.trap(signal) do
+          stop
+          EM.add_periodic_timer(1) { Kernel.exit! if @connections.empty? }
+        end
       end
 
-      # die die, too bad
-      %w(INT QUIT TERM).each {|signal| Signal.trap(signal) { stop!; Kernel.exit! }}
+      # hard stop, discard requests and quit
+      %w(INT TERM).each do |signal|
+        Signal.trap(signal) do
+          stop!
+          Kernel.exit!
+        end
+      end
     end
 
     def disconnect
