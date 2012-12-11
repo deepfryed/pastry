@@ -123,11 +123,16 @@ class Pastry
 
     Signal.trap('CHLD') do
       if @running
-        died = pids.map {|pid| Process.waitpid(pid, Process::WNOHANG) rescue nil}.compact
-        died.each do |pid|
-          logger.info "process #{pid} died, starting a new one"
-          idx       = pids.index(pid)
-          pids[idx] = run(server, idx)
+        Thread.exclusive do
+          died = pids.select {|pid| Process.waitpid(pid, Process::WNOHANG) rescue 0} # find dead pids
+          died = died.reject {|pid| Process.kill(0, pid) rescue nil} # make sure what's dead is dead
+
+          died.each do |pid|
+            logger.info "process #{pid} died, starting a new one"
+            if idx = pids.index(pid)
+              pids[idx] = run(server, idx)
+            end
+          end
         end
       end
     end
