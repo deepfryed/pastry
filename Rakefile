@@ -30,7 +30,7 @@ task :gemspec do
 end
 
 desc 'tag release and build gem'
-task :release => [:test, :gemspec] do
+task :release => [:gemspec] do
   system("git tag -m 'version #{$gemspec.version}' v#{$gemspec.version}") or raise "failed to tag release"
   system("gem build #{$gemspec.name}.gemspec")
 end
