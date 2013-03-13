@@ -9,6 +9,7 @@ GEM
   specs:
     daemons (1.1.4)
     rack (1.3.5)
+    rake (10.0.3)
     thin (1.3.1)
       daemons (>= 1.0.9)
       eventmachine (>= 0.12.6)
@@ -19,4 +20,5 @@ PLATFORMS
 
 DEPENDENCIES
   eventmachine!
+  rake
   thin
