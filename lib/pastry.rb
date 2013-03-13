@@ -65,6 +65,8 @@ class Pastry
 
   private
 
+  GRACE = 60
+
   attr_accessor :pids
 
   def do_sanity_checks
@@ -200,10 +202,10 @@ class Pastry
     Process.detach(pid)
 
     begin
-      Timeout.timeout(timeout) { sleep 0.5 until File.exists?(pidfile) }
+      Timeout.timeout(GRACE) { sleep 0.5 until File.exists?(pidfile) }
     rescue Timeout::Error => e
       Process.kill('TERM', pid) rescue nil
-      logger.error "new master failed to spawn within #{timeout} secs, check logs"
+      logger.error "new master failed to spawn within #{GRACE} secs, check logs"
       @running = true
       FileUtils.mv "#{pidfile}.old", pidfile
     else
@@ -220,9 +222,9 @@ class Pastry
     pids.each {|pid| Process.kill(signal, pid) rescue nil}
     return if signal == 'KILL'
 
-    logger.info "waiting up to #{timeout} seconds"
+    logger.info "waiting up to #{GRACE} seconds"
     begin
-      Timeout.timeout(timeout) do
+      Timeout.timeout(GRACE) do
         alive = pids
         until alive.empty?
           sleep 0.1
@@ -243,7 +245,7 @@ class Pastry
       $0 = "#{name ? "%s worker" % name : "pastry chef"} #{worker} (started: #{Time.now})"
       EM.epoll
       EM.set_descriptor_table_size(max_connections)
-      EM.run { Backend.new.start(server) }
+      EM.run { Backend.new(timeout: timeout).start(server) }
     end
   end
 
@@ -252,6 +254,11 @@ class Pastry
   end
 
   class Backend < Thin::Backends::Base
+    def initialize options = {}
+      super()
+      @timeout = options.fetch(:timeout, 30)
+    end
+
     def start server
       @stopping = false
       @running  = true
@@ -259,6 +266,11 @@ class Pastry
 
       trap_signals!
       @signature = EM.attach_server_socket(server, Thin::Connection, &method(:initialize_connection))
+    end
+
+    def initialize_connection connection
+      super
+      connection.comm_inactivity_timeout = @timeout
     end
 
     def trap_signals!
