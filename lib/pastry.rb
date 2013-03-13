@@ -95,6 +95,31 @@ class Pastry
     @logger ||= Logger.new(logfile || (daemonize ? '/tmp/pastry.log' : $stdout), 0)
   end
 
+  def respawn!
+    Thread.exclusive do
+      died = pids.select {|pid| Process.waitpid(pid, Process::WNOHANG) rescue 0} # find dead pids
+      died = died.reject {|pid| Process.kill(0, pid) rescue nil} # make sure what's dead is dead
+
+      died.each do |pid|
+        logger.info "process #{pid} died, starting a new one"
+        if idx = pids.index(pid)
+          pids[idx] = run(server, idx)
+        end
+      end
+    end
+  end
+
+  def start_command_listener io
+    Thread.new do
+      while command = io.gets
+        case command
+          when /SIGCHLD/
+            respawn! if @running
+        end
+      end
+    end
+  end
+
   def start!
     create_pidfile
     server   = ENV['PASTRY_FD'] && Socket.for_fd(ENV['PASTRY_FD'].to_i)
@@ -121,19 +146,11 @@ class Pastry
     @running   = true
     @pids      = pool.times.map {|idx| run(server, idx) }
 
-    Signal.trap('CHLD') do
-      if @running
-        Thread.exclusive do
-          died = pids.select {|pid| Process.waitpid(pid, Process::WNOHANG) rescue 0} # find dead pids
-          died = died.reject {|pid| Process.kill(0, pid) rescue nil} # make sure what's dead is dead
-
-          died.each do |pid|
-            logger.info "process #{pid} died, starting a new one"
-            if idx = pids.index(pid)
-              pids[idx] = run(server, idx)
-            end
-          end
-        end
+    # hack to avoid deadlocks in signal handler
+    IO.pipe.tap do |reader, writer|
+      start_command_listener(reader)
+      Signal.trap('CHLD') do
+        writer.puts 'SIGCHLD'
       end
     end
 
